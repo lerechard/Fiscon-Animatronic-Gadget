@@ -24,25 +24,34 @@ camera.configure(camera.create_still_configuration())
 camera.start()
 sleep(2)
 
-frame_delay = 1 / 5  # default 5 FPS
+frame_delay = 1 / 5  # default: 5 FPS
 
 @socketio.on('set_fps')
 def set_fps(data):
     global frame_delay
     fps = data.get('fps', 5)
-    frame_delay = 1.0 / max(0.1, min(fps, 15))
-    print(f"Updated frame delay to {frame_delay:.2f} sec/frame")
+    fps = max(1, min(fps, 15))
+    frame_delay = 1.0 / fps
+    msg = f"📡 Pi: Frame rate set to {fps:.1f} FPS ({frame_delay:.2f} s/frame)"
+    socketio.emit('telemetry', msg)
 
 @socketio.on('ping')
 def handle_ping():
     socketio.emit('pong')
 
 def camera_loop():
+    frame_id = 0
     while True:
-        image_stream = io.BytesIO()
-        camera.capture_file(image_stream, format='jpeg')
-        image_stream.seek(0)
-        socketio.emit('photo_data', image_stream.read())
+        try:
+            image_stream = io.BytesIO()
+            camera.capture_file(image_stream, format='jpeg')
+            image_stream.seek(0)
+            image_data = image_stream.read()
+            socketio.emit('photo_data', image_data)
+            socketio.emit('telemetry', f"📸 Pi: Frame #{frame_id} sent ({len(image_data)} bytes)")
+            frame_id += 1
+        except Exception as e:
+            socketio.emit('telemetry', f"❌ Pi Error: {str(e)}")
         sleep(frame_delay)
 
 if __name__ == '__main__':
