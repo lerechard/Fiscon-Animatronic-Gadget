@@ -24,8 +24,7 @@ camera.configure(camera.create_still_configuration())
 camera.start()
 sleep(2)
 
-# Optional delay set by the desktop (0–1.0 seconds)
-extra_delay = 0.0
+extra_delay = 0.0  # set by desktop
 
 @socketio.on('set_delay')
 def set_delay(data):
