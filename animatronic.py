@@ -14,6 +14,7 @@ from flask import Flask
 from flask_socketio import SocketIO
 from PIL import Image
 import io
+import numpy as np
 from time import sleep
 
 app = Flask(__name__)
@@ -29,32 +30,42 @@ sleep(2)
 def handle_take_photo(data=None):
     print("Photo request received from desktop.")
 
-    # Default scale is 100% (no resize)
+    # Extract resolution scale from request
     scale_percent = 100
     if data and isinstance(data, dict):
         try:
             scale_percent = max(10, min(int(data.get('scale', 100)), 100))
         except Exception as e:
-            print("Invalid scale value received:", e)
+            print("Invalid scale value:", e)
 
-    # Capture raw image
-    frame = camera.capture_array()
-    img = Image.fromarray(frame)
+    try:
+        # Capture frame as RGB array
+        frame = camera.capture_array("main")
+        if frame is None:
+            print("Failed to capture image.")
+            return
 
-    # Resize image if needed
-    if scale_percent < 100:
-        w, h = img.size
-        new_size = (int(w * scale_percent / 100), int(h * scale_percent / 100))
-        img = img.resize(new_size, Image.LANCZOS)
+        # Convert NumPy array to PIL image
+        img = Image.fromarray(frame)
 
-    # Encode image to JPEG in memory
-    image_stream = io.BytesIO()
-    img.save(image_stream, format='JPEG')  # No compression control here
-    image_stream.seek(0)
+        # Resize if scale < 100%
+        if scale_percent < 100:
+            w, h = img.size
+            new_size = (int(w * scale_percent / 100), int(h * scale_percent / 100))
+            img = img.resize(new_size, Image.LANCZOS)
 
-    # Send image bytes to client
-    socketio.emit('photo_data', image_stream.read())
-    print(f"Photo sent at {scale_percent}% resolution.")
+        # Encode image as JPEG in memory
+        image_stream = io.BytesIO()
+        img.convert("RGB").save(image_stream, format='JPEG')  # Always ensure RGB mode
+        image_stream.seek(0)
+
+        # Emit image
+        socketio.emit('photo_data', image_stream.read())
+        print(f"Sent photo at {scale_percent}% resolution.")
+
+    except Exception as e:
+        print("Error handling photo request:", e)
 
 if __name__ == '__main__':
+    print("Starting Flask-SocketIO server...")
     socketio.run(app, host='0.0.0.0', port=5000)
