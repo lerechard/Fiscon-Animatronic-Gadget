@@ -1,22 +1,36 @@
+try:
+    import flask
+except ImportError:
+    import subprocess
+    subprocess.check_call(['pip', 'install', 'flask', 'flask-socketio', 'eventlet'])
+
+try:
+    from picamera2 import Picamera2
+except ImportError:
+    subprocess.check_call(['sudo', 'apt', 'install', '-y', 'python3-picamera2'])
+    exit("Re-run the script after installing Picamera2.")
+
 from flask import Flask
-from flask_socketio import SocketIO, emit
-import threading
+from flask_socketio import SocketIO
+import io
+from time import sleep
 
 app = Flask(__name__)
 socketio = SocketIO(app, cors_allowed_origins='*')
 
-# Handle message from desktop
-@socketio.on('chat_message')
-def handle_message(data):
-    print(f"{data['sender']}: {data['message']}")
-    # Broadcast to everyone including desktop
-    emit('chat_message', {'sender': data['sender'], 'message': data['message']}, broadcast=True)
+camera = Picamera2()
+camera.configure(camera.create_still_configuration())
+camera.start()
+sleep(2)
 
-def terminal_input_loop():
-    while True:
-        msg = input("You (Pi): ")
-        socketio.emit('chat_message', {'sender': 'Pi', 'message': msg})
+@socketio.on('take_photo')
+def handle_take_photo():
+    print("Photo request received from desktop.")
+    image_stream = io.BytesIO()
+    camera.capture_file(image_stream, format='jpeg')
+    image_stream.seek(0)
+    socketio.emit('photo_data', image_stream.read())
+    print("Photo sent to desktop.")
 
 if __name__ == '__main__':
-    threading.Thread(target=terminal_input_loop, daemon=True).start()
     socketio.run(app, host='0.0.0.0', port=5000)
