@@ -14,7 +14,6 @@ from flask import Flask
 from flask_socketio import SocketIO
 import io
 from time import sleep
-import threading
 
 app = Flask(__name__)
 socketio = SocketIO(app, cors_allowed_origins='*')
@@ -24,37 +23,21 @@ camera.configure(camera.create_still_configuration())
 camera.start()
 sleep(2)
 
-extra_delay = 0.0  # set by desktop
-
-@socketio.on('set_delay')
-def set_delay(data):
-    global extra_delay
+@socketio.on('take_photo')
+def handle_take_photo():
     try:
-        delay_val = float(data.get('delay', 0))
-        extra_delay = max(0.0, min(delay_val, 1.0))
-        socketio.emit('telemetry', f"📡 Pi: Delay set to {extra_delay:.2f} sec")
+        image_stream = io.BytesIO()
+        camera.capture_file(image_stream, format='jpeg')
+        image_stream.seek(0)
+        data = image_stream.read()
+        socketio.emit('photo_data', data)
+        socketio.emit('telemetry', f"📸 Pi: Photo taken and sent ({len(data)} bytes)")
     except Exception as e:
-        socketio.emit('telemetry', f"❌ Pi error setting delay: {e}")
+        socketio.emit('telemetry', f"❌ Pi error: {e}")
 
 @socketio.on('ping')
 def handle_ping():
     socketio.emit('pong')
 
-def camera_loop():
-    frame_id = 0
-    while True:
-        try:
-            image_stream = io.BytesIO()
-            camera.capture_file(image_stream, format='jpeg')
-            image_stream.seek(0)
-            data = image_stream.read()
-            socketio.emit('photo_data', data)
-            socketio.emit('telemetry', f"📸 Pi: Frame {frame_id} sent ({len(data)} bytes)")
-            frame_id += 1
-        except Exception as e:
-            socketio.emit('telemetry', f"❌ Pi error: {e}")
-        sleep(extra_delay)
-
 if __name__ == '__main__':
-    threading.Thread(target=camera_loop, daemon=True).start()
     socketio.run(app, host='0.0.0.0', port=5000)
