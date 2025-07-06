@@ -24,14 +24,18 @@ camera.configure(camera.create_still_configuration())
 camera.start()
 sleep(2)
 
-frame_delay = 1 / 5  # default: 5 FPS
+frame_delay = 1 / 5  # default 5 FPS
 
 @socketio.on('set_fps')
 def set_fps(data):
     global frame_delay
     fps = data.get('fps', 5)
     frame_delay = 1.0 / max(0.1, min(fps, 15))
-    print(f"Updated frame delay to {frame_delay:.2f} seconds per frame")
+    print(f"Updated frame delay to {frame_delay:.2f} sec/frame")
+
+@socketio.on('ping')
+def handle_ping():
+    socketio.emit('pong')
 
 def camera_loop():
     while True:
