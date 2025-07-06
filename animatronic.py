@@ -12,6 +12,7 @@ except ImportError:
 
 from flask import Flask
 from flask_socketio import SocketIO
+from PIL import Image
 import io
 from time import sleep
 
@@ -24,11 +25,25 @@ camera.start()
 sleep(2)
 
 @socketio.on('take_photo')
-def handle_take_photo():
+def handle_take_photo(data=None):
     print("Photo request received from desktop.")
+    
+    # Default quality
+    quality = 85
+    if data and isinstance(data, dict):
+        quality = int(data.get('quality', 85))
+        print(f"Using JPEG quality: {quality}")
+
+    # Capture image to memory
+    frame = camera.capture_array()
+    img = Image.fromarray(frame)
+
+    # Compress image
     image_stream = io.BytesIO()
-    camera.capture_file(image_stream, format='jpeg')
+    img.save(image_stream, format='JPEG', quality=quality)
     image_stream.seek(0)
+
+    # Send image
     socketio.emit('photo_data', image_stream.read())
     print("Photo sent to desktop.")
 
