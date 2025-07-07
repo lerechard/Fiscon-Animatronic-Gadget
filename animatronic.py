@@ -25,36 +25,51 @@ import threading
 import time
 import pyaudio
 
+# Flask app
 app = Flask(__name__)
 socketio = SocketIO(app, cors_allowed_origins='*')
 
+# Globals
 BASE_WIDTH = 640
 BASE_HEIGHT = 480
-camera = Picamera2()
 current_resolution = (BASE_WIDTH, BASE_HEIGHT)
+last_active_sid = None
+
+# Initialize camera
+camera = Picamera2()
 camera.configure(camera.create_still_configuration(main={"size": current_resolution}))
 camera.start()
 time.sleep(2)
 
+# Audio settings
 CHUNK = 1024
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
 RATE = 16000
 
 audio_interface = pyaudio.PyAudio()
-playback_stream = audio_interface.open(format=FORMAT, channels=CHANNELS, rate=RATE, output=True, frames_per_buffer=CHUNK)
-recording_stream = audio_interface.open(format=FORMAT, channels=CHANNELS, rate=RATE, input=True, frames_per_buffer=CHUNK)
+
+# Audio streams
+playback_stream = audio_interface.open(format=FORMAT, channels=CHANNELS, rate=RATE,
+                                       output=True, frames_per_buffer=CHUNK)
+
+recording_stream = audio_interface.open(format=FORMAT, channels=CHANNELS, rate=RATE,
+                                        input=True, frames_per_buffer=CHUNK)
 
 audio_clients = set()
 stream_audio = True
 
+# Log helper
 def send_log(message):
     print(message)
-    socketio.emit('pi_log', message)
+    if last_active_sid:
+        socketio.emit('pi_log', message, room=last_active_sid)
 
 @socketio.on('take_photo')
 def handle_take_photo():
+    global last_active_sid
     client_sid = request.sid
+    last_active_sid = client_sid  # Track most recent user
     image_stream = io.BytesIO()
     camera.capture_file(image_stream, format='jpeg')
     image_stream.seek(0)
