@@ -29,9 +29,14 @@ import pyaudio
 app = Flask(__name__)
 socketio = SocketIO(app, cors_allowed_origins='*')
 
-# Camera setup
+# Base resolution
+BASE_WIDTH = 640
+BASE_HEIGHT = 480
+
+# Initialize camera
 camera = Picamera2()
-camera.configure(camera.create_still_configuration())
+current_resolution = (BASE_WIDTH, BASE_HEIGHT)
+camera.configure(camera.create_still_configuration(main={"size": current_resolution}))
 camera.start()
 time.sleep(2)
 
@@ -43,14 +48,14 @@ RATE = 16000
 
 audio_interface = pyaudio.PyAudio()
 
-# Playback stream (for receiving from desktop)
+# Playback stream (from desktop)
 playback_stream = audio_interface.open(format=FORMAT,
                                        channels=CHANNELS,
                                        rate=RATE,
                                        output=True,
                                        frames_per_buffer=CHUNK)
 
-# Recording stream (for sending to desktop)
+# Recording stream (to desktop)
 recording_stream = audio_interface.open(format=FORMAT,
                                         channels=CHANNELS,
                                         rate=RATE,
@@ -72,6 +77,23 @@ def handle_take_photo():
 
     socketio.emit('photo_data', image_bytes, room=client_sid)
     print(f"Photo sent to {client_sid}")
+
+@socketio.on('set_resolution')
+def handle_set_resolution(scale):
+    global current_resolution, camera
+    try:
+        scale = float(scale)
+        width = max(160, int(BASE_WIDTH * scale))    # Enforce a safe minimum
+        height = max(120, int(BASE_HEIGHT * scale))
+        new_resolution = (width, height)
+        print(f"Setting new resolution: {new_resolution}")
+
+        camera.stop()
+        camera.configure(camera.create_still_configuration(main={"size": new_resolution}))
+        camera.start()
+        current_resolution = new_resolution
+    except Exception as e:
+        print("Failed to set resolution:", e)
 
 @socketio.on('connect')
 def handle_connect():
