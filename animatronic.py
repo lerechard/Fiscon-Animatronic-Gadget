@@ -25,87 +25,71 @@ import threading
 import time
 import pyaudio
 
-# Flask app
 app = Flask(__name__)
 socketio = SocketIO(app, cors_allowed_origins='*')
 
-# Base resolution
 BASE_WIDTH = 640
 BASE_HEIGHT = 480
-
-# Initialize camera
 camera = Picamera2()
 current_resolution = (BASE_WIDTH, BASE_HEIGHT)
 camera.configure(camera.create_still_configuration(main={"size": current_resolution}))
 camera.start()
 time.sleep(2)
 
-# Audio setup
 CHUNK = 1024
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
 RATE = 16000
 
 audio_interface = pyaudio.PyAudio()
-
-# Playback stream (from desktop)
-playback_stream = audio_interface.open(format=FORMAT,
-                                       channels=CHANNELS,
-                                       rate=RATE,
-                                       output=True,
-                                       frames_per_buffer=CHUNK)
-
-# Recording stream (to desktop)
-recording_stream = audio_interface.open(format=FORMAT,
-                                        channels=CHANNELS,
-                                        rate=RATE,
-                                        input=True,
-                                        frames_per_buffer=CHUNK)
+playback_stream = audio_interface.open(format=FORMAT, channels=CHANNELS, rate=RATE, output=True, frames_per_buffer=CHUNK)
+recording_stream = audio_interface.open(format=FORMAT, channels=CHANNELS, rate=RATE, input=True, frames_per_buffer=CHUNK)
 
 audio_clients = set()
 stream_audio = True
 
+def send_log(message):
+    print(message)
+    socketio.emit('pi_log', message)
+
 @socketio.on('take_photo')
 def handle_take_photo():
     client_sid = request.sid
-    print(f"Photo request received from {client_sid}")
-
     image_stream = io.BytesIO()
     camera.capture_file(image_stream, format='jpeg')
     image_stream.seek(0)
     image_bytes = image_stream.read()
-
     socketio.emit('photo_data', image_bytes, room=client_sid)
-    print(f"Photo sent to {client_sid}")
 
 @socketio.on('set_resolution')
 def handle_set_resolution(scale):
-    global current_resolution, camera
+    global current_resolution
     try:
         scale = float(scale)
-        width = max(160, int(BASE_WIDTH * scale))    # Enforce a safe minimum
+        width = max(160, int(BASE_WIDTH * scale))
         height = max(120, int(BASE_HEIGHT * scale))
         new_resolution = (width, height)
-        print(f"Setting new resolution: {new_resolution}")
 
+        send_log(f"Reconfiguring camera to {new_resolution}")
         camera.stop()
         camera.configure(camera.create_still_configuration(main={"size": new_resolution}))
         camera.start()
         current_resolution = new_resolution
+        send_log("Camera reconfigured successfully")
     except Exception as e:
-        print("Failed to set resolution:", e)
+        send_log(f"Failed to set resolution: {e}")
 
 @socketio.on('connect')
 def handle_connect():
     client_sid = request.sid
-    print(f"Client connected: {client_sid}")
     audio_clients.add(client_sid)
+    send_log(f"Client connected: {client_sid}")
 
 @socketio.on('disconnect')
 def handle_disconnect():
     client_sid = request.sid
-    print(f"Client disconnected: {client_sid}")
     audio_clients.discard(client_sid)
+    send_log(f"Client disconnected: {client_sid}")
 
 @socketio.on('audio_chunk_to_pi')
 def handle_audio_chunk(data):
@@ -118,10 +102,9 @@ def stream_audio_to_clients():
             for sid in list(audio_clients):
                 socketio.emit('audio_chunk_from_pi', data, room=sid)
         except Exception as e:
-            print("Error streaming audio:", e)
+            send_log(f"Audio stream error: {e}")
         time.sleep(0.001)
 
-# Start audio streaming in background thread
 audio_thread = threading.Thread(target=stream_audio_to_clients, daemon=True)
 audio_thread.start()
 
